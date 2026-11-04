@@ -69,6 +69,96 @@ int set_cursor_pos(const int fd, const int row, const int col)
         return 0;
 }
 
+typedef struct Line
+{
+        char* data;
+        int len;
+
+        struct Line* prev_line;
+        struct Line* next_line;
+} Line;
+
+typedef struct TUI
+{
+        Line* first_line;
+        Line* last_line;
+        int num_lines;
+
+        int num_rows;
+        int num_cols;
+
+        Line* cur_line;
+        int cur_top_offset;
+        int cur_col;
+} TUI;
+
+int create_tui(TUI* tui, int num_rows, int num_cols)
+{
+        *tui = (TUI){
+                .first_line = NULL,
+                .last_line = NULL,
+                .num_lines = 0,
+
+                .num_rows = num_rows,
+                .num_cols = num_cols,
+                .cur_line = NULL,
+                .cur_top_offset = 0,
+                .cur_col = 0
+        };
+
+        return 0;
+}
+
+int populate_tui(TUI* tui, Line* first_line)
+{
+        tui->first_line = first_line;
+
+        Line *curr_line = first_line;
+        while (curr_line->next_line != NULL)
+        {
+                curr_line = curr_line->next_line;
+                tui->num_lines++;
+        }
+
+        tui->last_line = curr_line;
+
+        return 0;
+}
+
+int gen_tui_buf(TUI* tui, char* buf)
+{
+        return 0;
+}
+
+int update_tui_cur(TUI* tui, const int fd)
+{
+        set_cursor_pos(fd, 0, 0);
+
+        return 0;
+}
+
+int create_line(Line* line, const char* data, int len, Line* prev_line)
+{
+        *line = (Line){
+                .data = NULL,
+                .len = len,
+                .prev_line = prev_line,
+                .next_line = NULL
+        };
+
+        if (line->prev_line != NULL) { line->prev_line->next_line = line; };
+
+        line->data = malloc(len);
+        if (line->data == NULL)
+        {
+                perror("error");
+                return 1;
+        }
+        memcpy(line->data, data, len);
+
+        return 0;
+}
+
 int main(int argc, char* argv[])
 {
         setbuf(stdin, buf);
@@ -80,21 +170,23 @@ int main(int argc, char* argv[])
                 perror("error");
                 return 1;
         }
-        int num_rows = window.ws_row;
-        int num_cols = window.ws_col;
 
-        char* tui = malloc(num_rows*num_cols + 256);
-        if (tui == NULL)
+        TUI tui;
+        create_tui(&tui, window.ws_row, window.ws_col);
+
+        Line first_line;
+        const char* test = "test";
+        create_line(&first_line, test, strlen(test), NULL);
+
+        Line* prev_line = &first_line;
+        for (int i = 1; i < tui.num_rows; i++)
         {
-                perror("error");
-                return 1;
+                Line line;
+                create_line(&line, "", 0, prev_line);
+                prev_line = &line;
         }
 
-        const char* test = CLEAR RESET_CURSOR "test\n";
-        strcpy(tui, test);
-        int offset = strlen(test);
-        memset(tui + offset, '\n', num_rows - 2);
-        tui[num_rows + offset - 2] = '\0';
+        populate_tui(&tui, &first_line);
 
         int fd = open("/dev/tty", O_RDWR | O_NONBLOCK);
         if (fd == -1)
@@ -107,31 +199,31 @@ int main(int argc, char* argv[])
         if (enter_raw_mode(fd, &orig) == 1)
         {
                 close(fd);
-                free(tui);
                 return 1;
         }
 
-        write(fd, tui, strlen(tui));
-        set_cursor_pos(fd, 10, 5);
+        char* tui_buf;
+        if (gen_tui_buf(&tui, tui_buf) == 1)
+        {
+                return 1;
+        }
+        write(fd, tui_buf, strlen(tui_buf));
+        update_tui_cur(&tui, fd);
 
         if (arm_sigio(fd) == 1)
         {
                 tcsetattr(fd, TCSAFLUSH, &orig);
                 close(fd);
-                free(tui);
                 return 1;
         }
 
         for(;;)
         {
                 pause();
-                if (buf[0] == 'q') break;
-                write(fd, buf, strlen(buf));
         }
 
         tcsetattr(fd, TCSAFLUSH, &orig);
         close(fd);
-        free(tui);
 
         return 0;
 }
