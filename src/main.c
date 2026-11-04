@@ -53,7 +53,7 @@ static int arm_sigio(int fd)
         return 0;
 }
 
-int set_cursor_pos(const int fd, const int row, const int col)
+int set_cursor_pos(char* buf, int* buf_len, const int row, const int col)
 {
         const int MAX_SIZE = 256;
         char command[MAX_SIZE];
@@ -64,7 +64,8 @@ int set_cursor_pos(const int fd, const int row, const int col)
                 return 1;
         }
 
-        write(fd, command, strlen(command));
+        memcpy(buf + buf_len, command, res);
+        *buf_len+=res;
 
         return 0;
 }
@@ -87,6 +88,8 @@ typedef struct TUI
         int num_rows;
         int num_cols;
 
+        int top_row;
+
         Line* cur_line;
         int cur_top_offset;
         int cur_col;
@@ -101,6 +104,9 @@ int create_tui(TUI* tui, int num_rows, int num_cols)
 
                 .num_rows = num_rows,
                 .num_cols = num_cols,
+
+                .top_row = 0,
+
                 .cur_line = NULL,
                 .cur_top_offset = 0,
                 .cur_col = 0
@@ -125,14 +131,26 @@ int populate_tui(TUI* tui, Line* first_line)
         return 0;
 }
 
-int gen_tui_buf(TUI* tui, char* buf)
+int gen_tui_buf(TUI* tui, char* buf, int* buf_len)
 {
-        return 0;
-}
+        const int SIZE = 0xFFFF;
 
-int update_tui_cur(TUI* tui, const int fd)
-{
-        set_cursor_pos(fd, 0, 0);
+        buf = malloc(SIZE);
+        if (buf = NULL)
+        {
+                perror("error");
+                return 1;
+        }
+
+        *buf_len = 0;
+
+        // viewport gen logic
+
+        if (set_cursor_pos(buf, buf_len, tui->top_row + tui->cur_row_offset, tui->cur_col) == 1)
+        {
+                perror("error");
+                return 1;
+        }
 
         return 0;
 }
@@ -208,12 +226,13 @@ int main(int argc, char* argv[])
         }
 
         char* tui_buf;
-        if (gen_tui_buf(&tui, tui_buf) == 1)
+        int tui_buf_len;
+        if (gen_tui_buf(&tui, tui_buf, &tui_buf_len) == 1)
         {
                 return 1;
         }
-        write(fd, tui_buf, strlen(tui_buf));
-        update_tui_cur(&tui, fd);
+        write(fd, tui_buf, tui_buf_len);
+        free(tui_buf);
 
         if (arm_sigio(fd) == 1)
         {
