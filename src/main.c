@@ -181,9 +181,14 @@ int main(int argc, char* argv[])
         Line* prev_line = &first_line;
         for (int i = 1; i < tui.num_rows; i++)
         {
-                Line line;
-                create_line(&line, "", 0, prev_line);
-                prev_line = &line;
+                Line* line = malloc(sizeof(Line));
+                if (line == NULL)
+                {
+                        perror("error");
+                        return 1;
+                }
+                create_line(line, "", 0, prev_line);
+                prev_line = line;
         }
 
         populate_tui(&tui, &first_line);
