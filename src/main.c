@@ -28,6 +28,7 @@ static int enter_raw_mode(int fd, struct termios *term)
         }
         struct termios raw = *term;
         cfmakeraw(&raw);
+        raw.c_lflag |= ISIG;
         if (tcsetattr(fd, TCSAFLUSH, &raw) == -1)
         {
                 perror("error");
@@ -64,7 +65,7 @@ int set_cursor_pos(char* buf, int* buf_len, const int row, const int col)
                 return 1;
         }
 
-        memcpy(buf + buf_len, command, res);
+        memcpy(buf + *buf_len, command, res);
         *buf_len+=res;
 
         return 0;
@@ -131,26 +132,35 @@ int populate_tui(TUI* tui, Line* first_line)
         return 0;
 }
 
-int gen_tui_buf(TUI* tui, char* buf, int* buf_len)
+int gen_tui_buf(TUI* tui, char** out_buf, int* buf_len)
 {
         const int SIZE = 0xFFFF;
 
-        buf = malloc(SIZE);
-        if (buf = NULL)
+        char* buf = malloc(SIZE);
+        if (buf == NULL)
         {
                 perror("error");
                 return 1;
         }
 
-        *buf_len = 0;
+        *buf_len = strlen(CLEAR);
+        memcpy(buf, CLEAR, *buf_len);
 
-        // viewport gen logic
+        Line* curr_line = tui->first_line;
+        while (curr_line != NULL)
+        {
+                memcpy(buf + *buf_len, curr_line->data, curr_line->len);
+                *buf_len+=curr_line->len;
+                curr_line = curr_line->next_line;
+        }
 
-        if (set_cursor_pos(buf, buf_len, tui->top_row + tui->cur_row_offset, tui->cur_col) == 1)
+        if (set_cursor_pos(buf, buf_len, tui->top_row + tui->cur_top_offset, tui->cur_col) == 1)
         {
                 perror("error");
                 return 1;
         }
+
+        *out_buf = buf;
 
         return 0;
 }
@@ -227,7 +237,7 @@ int main(int argc, char* argv[])
 
         char* tui_buf;
         int tui_buf_len;
-        if (gen_tui_buf(&tui, tui_buf, &tui_buf_len) == 1)
+        if (gen_tui_buf(&tui, &tui_buf, &tui_buf_len) == 1)
         {
                 return 1;
         }
@@ -245,6 +255,8 @@ int main(int argc, char* argv[])
         {
                 pause();
         }
+
+        printf("%s\n", buf);
 
         tcsetattr(fd, TCSAFLUSH, &orig);
         close(fd);
